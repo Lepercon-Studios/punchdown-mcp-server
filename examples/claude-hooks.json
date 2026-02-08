@@ -1,0 +1,28 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"const r=require('child_process').execSync('curl -s http://localhost:3002/api/approval/check --data-raw \\'{\"tool\":\"'+ process.env.CLAUDE_TOOL_NAME +'\",\"input\":\"'+ encodeURIComponent(process.env.CLAUDE_TOOL_INPUT || '') +'\"}\\' -H \"Content-Type: application/json\"');const j=JSON.parse(r);if(j.decision==='denied'){process.exit(2)}\"",
+            "timeout": 30000
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node -e \"require('child_process').execSync('curl -s http://localhost:3002/api/status/notify --data-raw \\'{\"tool\":\"'+ process.env.CLAUDE_TOOL_NAME +'\",\"status\":\"completed\"}\\' -H \"Content-Type: application/json\"')\"",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
+}

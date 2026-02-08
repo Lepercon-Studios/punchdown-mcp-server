@@ -5,6 +5,7 @@ export interface PairingPayload {
   publicKey: string;
   encryptionPublicKey: string;
   relayUrl: string;
+  deviceName: string;
   timestamp: number;
 }
 
@@ -12,13 +13,15 @@ export function createPairingPayload(
   deviceId: string,
   publicKey: string,
   encryptionPublicKey: string,
-  relayUrl: string
+  relayUrl: string,
+  deviceName: string
 ): PairingPayload {
   return {
     deviceId,
     publicKey,
     encryptionPublicKey,
     relayUrl,
+    deviceName,
     timestamp: Date.now(),
   };
 }

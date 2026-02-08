@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { parseArgs } from "node:util";
 import { randomUUID } from "node:crypto";
-import { homedir } from "node:os";
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { homedir, hostname } from "node:os";
+import { existsSync, readFileSync, writeFileSync, copyFileSync, mkdirSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadConfig, saveConfig } from "./config/store.js";
 import { generateKeypair } from "./auth/keypair.js";
 import { generateEncryptionKeypair } from "./crypto/encryption.js";
@@ -86,7 +87,8 @@ async function runPair(): Promise<void> {
     config.deviceId,
     config.keypair.publicKey,
     config.encryptionKeypair.publicKey,
-    relayUrl
+    relayUrl,
+    hostname()
   );
   // Include the pairingId in the QR data
   const qrData = { ...payload, pairingId };
@@ -154,39 +156,76 @@ async function runPair(): Promise<void> {
 function runSetup(): void {
   const home = homedir();
 
+  // Resolve the path to dist/index.js relative to this CLI script
+  const thisFile = fileURLToPath(import.meta.url);
+  const distDir = dirname(thisFile);
+  const serverEntryPath = join(distDir, "index.js");
+
+  const punchdownEntry = {
+    command: "node",
+    args: [serverEntryPath],
+  };
+
   const agents = [
     {
       name: "Claude Code",
-      configPath: join(
-        home,
-        ".config",
-        "claude",
-        "claude_desktop_config.json"
-      ),
-      addCommand:
-        "claude mcp add punchdown -- node /path/to/punchdown-mcp-server/dist/index.js",
+      configPath: join(home, ".config", "claude", "claude_desktop_config.json"),
     },
     {
       name: "Cursor",
       configPath: join(home, ".cursor", "mcp.json"),
-      addCommand:
-        'Add to .cursor/mcp.json: {"mcpServers":{"punchdown":{"command":"node","args":["/path/to/punchdown-mcp-server/dist/index.js"]}}}',
     },
   ];
 
-  console.log("Detected AI coding agents:\n");
-  let found = false;
+  console.log("Punchdown MCP Server Setup\n");
+
+  let configured = 0;
   for (const agent of agents) {
-    if (existsSync(agent.configPath)) {
-      console.log(`  * ${agent.name}`);
-      console.log(`    ${agent.addCommand}\n`);
-      found = true;
+    const configDir = dirname(agent.configPath);
+    const configExists = existsSync(agent.configPath);
+
+    // Only configure agents whose config directory exists (agent is installed)
+    if (!existsSync(configDir)) {
+      continue;
     }
+
+    // Read existing config or start fresh
+    let config: Record<string, unknown> = {};
+    if (configExists) {
+      try {
+        config = JSON.parse(readFileSync(agent.configPath, "utf-8"));
+      } catch {
+        console.log(`  Warning: Could not parse ${agent.configPath}, starting fresh`);
+        config = {};
+      }
+
+      // Backup existing config
+      const backupPath = `${agent.configPath}.bak`;
+      copyFileSync(agent.configPath, backupPath);
+      console.log(`  Backed up ${agent.configPath} -> ${backupPath}`);
+    }
+
+    // Ensure mcpServers key exists
+    if (!config.mcpServers || typeof config.mcpServers !== "object") {
+      config.mcpServers = {};
+    }
+
+    // Add punchdown entry
+    (config.mcpServers as Record<string, unknown>).punchdown = punchdownEntry;
+
+    // Write updated config
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(agent.configPath, JSON.stringify(config, null, 2) + "\n", "utf-8");
+
+    console.log(`  Configured ${agent.name}: ${agent.configPath}`);
+    configured++;
   }
-  if (!found) {
+
+  if (configured === 0) {
     console.log("  No known agents detected.");
-    console.log(
-      "  To add manually, use: punchdown-mcp-server as an MCP stdio server\n"
-    );
+    console.log("  To add manually, use: punchdown-mcp-server as an MCP stdio server\n");
+  } else {
+    console.log(`\n  Done! Configured ${configured} agent(s).`);
+    console.log(`  MCP server entry: node ${serverEntryPath}\n`);
   }
 }

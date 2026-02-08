@@ -68,6 +68,69 @@ Sends a status update (milestone, progress, error, complete) to the mobile dashb
 
 Updates the mobile dashboard with current task title, description, and files involved.
 
+## Claude Code Hooks
+
+Punchdown can integrate with Claude Code's [hook system](https://docs.anthropic.com/en/docs/claude-code/hooks) to intercept tool calls before and after execution. This lets you route approval requests through Punchdown's mobile app automatically.
+
+### PreToolUse Hook
+
+Add a `PreToolUse` hook to require mobile approval before any tool runs. If the user denies the request, the hook exits with code 2 to block the tool:
+
+```json
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "punchdown approve --tool $CLAUDE_TOOL_NAME",
+            "timeout": 30000
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### PostToolUse Hook
+
+Add a `PostToolUse` hook to send a status notification after each tool completes:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": ".*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "punchdown notify --tool $CLAUDE_TOOL_NAME --status completed",
+            "timeout": 5000
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### Selective Matching
+
+Use the `matcher` field to limit hooks to specific tools. For example, to only require approval for file writes and bash commands:
+
+```json
+{
+  "matcher": "Write|Bash|Edit",
+  "hooks": [{ "type": "command", "command": "punchdown approve --tool $CLAUDE_TOOL_NAME", "timeout": 30000 }]
+}
+```
+
+See `examples/claude-hooks.json` for a complete example configuration.
+
 ## Security
 
 - **End-to-end encrypted**: All tool call content is encrypted with NaCl box before leaving your machine
